@@ -33,8 +33,15 @@ module Taut
     -- * Consume
   , render
   , toPostMessageRequest
+  , chatPostMessage
+
+    -- * Re-exports
+  , Slack.HasToken(..)
+  , Slack.HasManager(..)
   ) where
 
+import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Reader.Class (MonadReader)
 import Data.Aeson (ToJSON(..), (.=), object)
 import Data.Int (Int8, Int16, Int32, Int64)
 import Data.List.NonEmpty (NonEmpty(..))
@@ -42,13 +49,15 @@ import Data.String (IsString(..))
 import Data.Text (Text)
 import Data.Text.Lazy.Builder (Builder)
 import Data.Word (Word8, Word16, Word32, Word64)
-import Web.Slack.Chat (PostMsgReq(..), mkPostMsgReq)
+import Web.Slack.Chat (PostMsgReq(..), PostMsgRsp, mkPostMsgReq)
+import Web.Slack.Common (SlackClientError)
 import Web.Slack.Types (UserId(..))
 import qualified Data.Aeson.Text as Aeson
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Builder as TB
 import qualified Data.Text.Lazy.Builder.Int as TB
+import qualified Web.Slack as Slack
 
 data SlackText = SlackText Int64 Builder
   deriving stock (Eq, Ord, Show)
@@ -232,3 +241,8 @@ toPostMessageRequest :: ()
   -> PostMsgReq
 toPostMessageRequest channel msg
   = (mkPostMsgReq channel "") { postMsgReqBlocks = Just (render msg) }
+
+chatPostMessage :: (MonadReader env m, Slack.HasManager env, Slack.HasToken env, MonadIO m)
+  => PostMsgReq
+  -> m (Either SlackClientError PostMsgRsp)
+chatPostMessage = Slack.chatPostMessage

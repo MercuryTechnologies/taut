@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -41,9 +42,12 @@ module Taut
   , userLookupByEmail
   ) where
 
+import Control.Applicative (optional)
+import Control.Monad (guard)
+import Data.Foldable (asum)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader.Class (MonadReader)
-import Data.Aeson (ToJSON(..), (.=), object)
+import Data.Aeson (FromJSON(..), ToJSON(..), Object, (.=), object, withObject, withText, (.:))
 import Data.Int (Int8, Int16, Int32, Int64)
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.String (IsString(..))
@@ -82,9 +86,12 @@ instance ToJSON SlackText where
       truncateMessageLength = fromIntegral (TL.length truncateMessage)
       maxMessageLength = 3000 - truncateMessageLength
 
+instance FromJSON SlackText where
+  parseJSON = withText "SlackText" (pure . message)
+
 newtype SlackMessage = SlackMessage [SlackBlock]
   deriving stock (Show)
-  deriving newtype (Eq, ToJSON)
+  deriving newtype (Eq, ToJSON, FromJSON)
 
 data SlackBlock
   = SlackBlockSection SlackText
@@ -108,6 +115,27 @@ instance ToJSON SlackBlock where
     SlackBlockDivider -> object
       [ "type" .= ("divider" :: Text)
       ]
+
+instance FromJSON SlackBlock where
+  parseJSON v = asum $ map ($ v) [blockSection, blockImage, blockContext, blockDivider]
+    where
+      blockSection = withObject "SlackBlockSection" $ \o -> do
+        typ <- o .: "type"
+        guard (typ == ("section" :: Text))
+        txt <- o .: "text"
+        pure $ SlackBlockSection txt
+      blockImage = const $ do
+        SlackContentImage i <- parseJSON v
+        pure $ SlackBlockImage i
+      blockContext = withObject "SlackBlockContext" $ \o -> do
+        typ <- o .: "type"
+        guard (typ == ("context" :: Text))
+        contents <- o .: "elements"
+        pure $ SlackBlockContext contents
+      blockDivider = withObject "SlackBlockDivider" $ \o -> do
+        typ <- o .: "type"
+        guard (typ == ("divider" :: Text))
+        pure SlackBlockDivider
 
 data SlackContent
   = SlackContentText  SlackText
@@ -133,6 +161,24 @@ instance ToJSON SlackContent where
           ]
         ]
 
+instance FromJSON SlackContent where
+  parseJSON v = asum $ map ($ v) [contentText, contentImage]
+    where
+      contentText = withObject "SlackContentText" $ \o -> do
+        typ <- o .: "type"
+        guard (typ == ("type" :: Text))
+        txt <- o .: "text"
+        pure $ SlackContentText txt
+      contentImage = withObject "SlackContentImage" $ \o -> do
+        typ <- o .: "type"
+        guard (typ == ("image" :: Text))
+        url <- o .: "image_url"
+        altText <- o .: "alt_text"
+        mtitle <- optional $ do
+          title :: Object <- o .: ("title" :: Text)
+          title .: "text"
+        pure $ SlackContentImage $ SlackImage mtitle altText url
+
 data SlackImage = SlackImage
   { slackImageTitle   :: Maybe Text
     -- ^ Optional title
@@ -143,7 +189,7 @@ data SlackImage = SlackImage
 
 newtype SlackContext = SlackContext [SlackContent]
   deriving stock (Show)
-  deriving newtype (Eq, Semigroup, Monoid, ToJSON)
+  deriving newtype (Eq, Semigroup, Monoid, ToJSON, FromJSON)
 
 -- | Render a 'SlackMessage' to Strict 'Text'.
 render :: SlackMessage -> Text

@@ -38,6 +38,7 @@ module Taut
     -- * Re-exports
   , Slack.HasToken(..)
   , Slack.HasManager(..)
+  , userLookupByEmail
   ) where
 
 import Control.Monad.IO.Class (MonadIO)
@@ -51,6 +52,7 @@ import Data.Text.Lazy.Builder (Builder)
 import Data.Word (Word8, Word16, Word32, Word64)
 import Web.Slack.Chat (PostMsgReq(..), PostMsgRsp, mkPostMsgReq)
 import Web.Slack.Common (SlackClientError)
+import Web.Slack.User (Email(..), UserRsp)
 import Web.Slack.Types (UserId(..))
 import qualified Data.Aeson.Text as Aeson
 import qualified Data.Text as T
@@ -246,3 +248,8 @@ chatPostMessage :: (MonadReader env m, Slack.HasManager env, Slack.HasToken env,
   => PostMsgReq
   -> m (Either SlackClientError PostMsgRsp)
 chatPostMessage = Slack.chatPostMessage
+
+userLookupByEmail :: (MonadReader env m, Slack.HasManager env, Slack.HasToken env, MonadIO m)
+  => Text
+  -> m (Either SlackClientError UserRsp)
+userLookupByEmail = Slack.userLookupByEmail . Email
